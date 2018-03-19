@@ -93,10 +93,7 @@
 %% NEW-OPTIONS: xml_export, index_columns, stylesheet
 
 module(Element, Options) ->
-    XML = layout_module(Element, init_opts(Element, Options)),
-    Export = proplists:get_value(xml_export, Options,
-         ?DEFAULT_XML_EXPORT),
-    xmerl:export_simple(XML, Export, []).
+    layout_module(Element, init_opts(Element, Options)).
 
 % Put layout options in a data structure for easier access.
 
@@ -180,6 +177,8 @@ init_opts(Element, Options) ->
 %% TODO: improve layout of parameterized modules
 
 layout_module(#xmlElement{name = module, content = Es}=E, Opts) ->
+    % erlang:display(proplists:get_value(sidebar_nav, Opts, "")),
+
     Args = module_params(get_content(args, Es)),
     Name = get_attrval(name, E),
     Title = case get_elem(args, Es) of
@@ -223,7 +222,9 @@ layout_module(#xmlElement{name = module, content = Es}=E, Opts) ->
       ++ navigation("bottom")
       ++ footer()),
     Encoding = Opts#opts.encoding,
-    xhtml(Title, stylesheet(Opts), Body, Encoding).
+    erlang:display("======================"),
+    erlang:display(Body),
+    Body.
 
 module_params(Es) ->
     As = [{get_text(argName, Es1),
@@ -254,19 +255,12 @@ navigation(Where) ->
     [?NL,
      {'div', [{class, "navbar"}],
       [{a, [{name, "#navbar_" ++ Where}], []},
-       {table, [{width, "100%"}, {border,0},
-    {cellspacing, 0}, {cellpadding, 2},
-    {summary, "navigation bar"}],
-  [{tr,
-    [{td, [{a, [{href, ?OVERVIEW_SUMMARY}, {target,"overviewFrame"}],
-      ["Overview"]}]},
-     {td, [{a, [{href, "http://www.erlang.org/"}],
+       {'div', [],
+  [{a, [{href, "http://www.erlang.org/"}],
       [{img, [{src, "erlang.png"}, {align, "right"},
         {border, 0}, {alt, "erlang logo"}],
         []}]}
     ]}
-    ]}
-  ]}
       ]}
     ].
 
@@ -299,9 +293,7 @@ function_index(Fs, Cols) ->
        {h2, [{a, [{name, ?FUNCTION_INDEX_LABEL}],
         [?FUNCTION_INDEX_TITLE]}]},
        ?NL,
-       {table, [{width, "100%"}, {border, 1},
-          {cellspacing,0}, {cellpadding,2},
-          {summary, "function index"}],
+       {'div',
         Rows},
        ?NL]
     end.
@@ -309,20 +301,18 @@ function_index(Fs, Cols) ->
 function_index_rows(Fs, Cols, Title) ->
     Rows = (length(Fs) + (Cols - 1)) div Cols,
     (if Title == [] -> [];
-  true -> [{tr, [{th, [{colspan, Cols * 2}, {align, left}],
-      [Title]}]},
-     ?NL]
+  true -> [{'div', [Title], ?NL}]
      end
      ++ lists:flatmap(fun index_row/1,
           edoc_lib:transpose(edoc_lib:segment(Fs, Rows)))).
 
 index_row(Fs) ->
-    [{tr, lists:flatmap(fun index_col/1, Fs)}, ?NL].
+    [{'div', lists:flatmap(fun index_col/1, Fs)}].
 
 index_col({Name, F=#xmlElement{content = Es}}) ->
-    [{td, [{valign, "top"}],
+    [{'div',
       label_href(function_header(Name, F, "*"), F)},
-     {td, index_desc(Es)}].
+     {'div', [{class, "function-index-desc"}], index_desc(Es)}].
 
 index_desc(Es) ->
     Desc = get_content(description, Es),
@@ -741,19 +731,19 @@ behaviours(Es, Name, Opts) ->
                            [br, " Optional callback functions: "]
                            ++ seq(CBFun, OCBs, ["."])
                    end,
-       [{p, ([{b, ["This module defines the ", {tt, [Name]},
+       [{p, ([{b, ["This module defines the ", {span, [Name]},
        " behaviour."]}]
                    ++ Req ++ Opt)},
         ?NL]
      end).
 
 behaviour(E=#xmlElement{content = Es}) ->
-    see(E, [{tt, Es}]).
+    see(E, [{span, Es}]).
 
 callback(E=#xmlElement{}, Opts) ->
     Name = get_attrval(name, E),
     Arity = get_attrval(arity, E),
-    [{tt, [atom(Name, Opts), "/", Arity]}].
+    [{span, [atom(Name, Opts), "/", Arity]}].
 
 authors(Es) ->
     case get_elem(author, Es) of
@@ -778,18 +768,18 @@ author(E=#xmlElement{}) ->
     Mail = get_attrval(email, E),
     URI = get_attrval(website, E),
     (if Name == Mail ->
-       [{a, [{href, "mailto:" ++ Mail}],[{tt, [Mail]}]}];
+       [{a, [{href, "mailto:" ++ Mail}],[{span, [Mail]}]}];
   true ->
        if Mail == "" -> [Name];
     true -> [Name, " (", {a, [{href, "mailto:" ++ Mail}],
-              [{tt, [Mail]}]}, ")"]
+              [{span, [Mail]}]}, ")"]
        end
      end
      ++ if URI == "" ->
     [];
      true ->
     [" [", {em, ["web site:"]}, " ",
-     {tt, [{a, [{href, URI}, {target, "_top"}], [URI]}]},
+     {span, [{a, [{href, URI}, {target, "_top"}], [URI]}]},
      "]"]
   end).
 
@@ -806,9 +796,9 @@ todos(Es) ->
     case get_elem(todo, Es) of
   [] -> [];
   Es1 ->
-      Todos = [{li, [{font, [{color,red}], C}]}
+      Todos = [{li, [C]}
          || #xmlElement{content = C} <- Es1],
-      [{p, [{b, [{font, [{color,red}], ["To do"]}]},
+      [{p, [{b, ["To do"]},
       {ul, Todos}]},
        ?NL]
     end.

@@ -130,12 +130,16 @@ gen(Sources, App, Modules, Ctxt) ->
     Options = Ctxt#context.opts,
     Title = title(App, Options),
     CSS = stylesheet(Options),
-    {Modules1, Error} = sources(Sources, Dir, Modules, Env, Options),
 
-    ModulesPart = modules_frame(Dir, Modules1, Title, CSS),
-    _OverviewPart = overview(Dir, Title, Env, Options),
+    {Modules1, Error} = modules_list(Sources, Dir, Modules, Env, Options),
 
-    index_file(Dir, Title, ModulesPart, []),
+    ModulesList = modules_frame(Dir, Modules1, Title, CSS),
+
+    {_, _} = sources(Sources, Dir, Modules, ModulesList, Env, Options),
+
+    modules_frame(Dir, Modules1, Title, CSS),
+    overview(Dir, Title, Env, Options),
+    index_file(Dir, Title),
     edoc_lib:write_info_file(App, Modules1, Dir),
     copy_stylesheet(Dir, Options),
     copy_image(Dir),
@@ -165,13 +169,25 @@ title(App, Options) ->
 %% INHERIT-OPTIONS: edoc:get_doc/3
 %% DEFER-OPTIONS: run/2
 
-sources(Sources, Dir, Modules, Env, Options) ->
+modules_list(Sources, Dir, Modules, Env, Options) ->
     Suffix = proplists:get_value(file_suffix, Options,
          ?DEFAULT_FILE_SUFFIX),
     Private = proplists:get_bool(private, Options),
     Hidden = proplists:get_bool(hidden, Options),
     {Ms, E} = lists:foldl(fun (Src, {Set, Error}) ->
-          source(Src, Dir, Suffix, Env, Set,
+          sidebar_item(Src, Dir, Suffix, Env, Set,
+           Private, Hidden, Error, Options)
+        end,
+        {sets:new(), false}, Sources),
+    {[M || M <- Modules, sets:is_element(M, Ms)], E}.
+
+sources(Sources, Dir, Modules, ModulesList, Env, Options) ->
+    Suffix = proplists:get_value(file_suffix, Options,
+         ?DEFAULT_FILE_SUFFIX),
+    Private = proplists:get_bool(private, Options),
+    Hidden = proplists:get_bool(hidden, Options),
+    {Ms, E} = lists:foldl(fun (Src, {Set, Error}) ->
+          source(Src, ModulesList, Dir, Suffix, Env, Set,
            Private, Hidden, Error, Options)
         end,
         {sets:new(), false}, Sources),
@@ -182,26 +198,49 @@ sources(Sources, Dir, Modules, Env, Options) ->
 %% set if it was successful. Errors are just flagged at this stage,
 %% allowing all source files to be processed even if some of them fail.
 
-source({M, Name, Path}, Dir, Suffix, Env, Set, Private, Hidden,
+sidebar_item({M, Name, Path}, Dir, Suffix, Env, Set, Private, Hidden,
        Error, Options) ->
     File = filename:join(Path, Name),
     case catch {ok, edoc:get_doc(File, Env, Options)} of
-  {ok, {Module, Doc}} ->
-      check_name(Module, M, File),
-      case ((not is_private(Doc)) orelse Private)
-    andalso ((not is_hidden(Doc)) orelse Hidden) of
-    true ->
-        Text = edoc:layout(Doc, Options),
-        Name1 = atom_to_list(M) ++ Suffix,
-                    Encoding = [{encoding,encoding(Doc)}],
-        edoc_lib:write_file(Text, Dir, Name1, Encoding),
-        {sets:add_element(Module, Set), Error};
-    false ->
-        {Set, Error}
-      end;
-  R ->
-      report("skipping source file '~ts': ~tP.", [File, R, 15]),
-      {Set, true}
+      {ok, {Module, Doc}} ->
+        check_name(Module, M, File),
+        case ((not is_private(Doc)) orelse Private)
+              andalso ((not is_hidden(Doc)) orelse Hidden) of
+          true ->
+            {sets:add_element(Module, Set), Error};
+          false ->
+            {Set, Error}
+        end;
+      R ->
+        report("skipping source file '~ts': ~tP.", [File, R, 15]),
+        {Set, true}
+    end.
+
+source({M, Name, Path}, Sidebar, Dir, Suffix, Env, Set, Private, Hidden,
+       Error, Options) ->
+    File = filename:join(Path, Name),
+    case catch {ok, edoc:get_doc(File, Env, Options)} of
+      {ok, {Module, Doc}} ->
+        check_name(Module, M, File),
+        case ((not is_private(Doc)) orelse Private)
+              andalso ((not is_hidden(Doc)) orelse Hidden) of
+          true ->
+            Body = edoc:layout(Doc, Options),
+            Name1 = atom_to_list(M) ++ Suffix,
+            Encoding = [{encoding,encoding(Doc)}],
+            Document = build_page(Body, Sidebar, encoding(Doc)),
+
+            erlang:display(Body),
+            erlang:display("="),
+
+            edoc_lib:write_file(Document, Dir, Name1, Encoding),
+            {sets:add_element(Module, Set), Error};
+          false ->
+            {Set, Error}
+        end;
+      R ->
+        report("skipping source file '~ts': ~tP.", [File, R, 15]),
+        {Set, true}
     end.
 
 check_name(M, M0, File) ->
@@ -226,20 +265,69 @@ check_name(M, M0, File) ->
 %% Creating an index file, with some frames optional.
 %% TODO: get rid of frames, or change doctype to Frameset
 
-index_file(Dir, Title, ModulesPart, AppPart) ->
-    Out = [ModulesPart, AppPart],
-    XML = xhtml_1(Title, [], Out),
+build_page(Body, Sidebar, Encoding) ->
+    % EncString = case Encoding of
+    %                 latin1 -> "ISO-8859-1";
+    %                 utf8 -> "UTF-8"
+    %             end,
+    Z = [{html, [?NL,
+       {head, [?NL,
+         {meta, [{'http-equiv',"Content-Type"},
+           {content, "text/html; charset=utf-8"}],
+          []},
+         ?NL,
+         {title, ["Title"]},
+         ?NL] ++ ["CSS"]},
+       ?NL,
+       {body, [], [{'div',
+                [{class, "sidebar"}], Sidebar},
+               {'div', [{class, "body"}], Body}]
+       },
+       ?NL]
+     },
+     ?NL],
+     xmerl:export_simple(Z, xmerl_html, []).
+
+index_file(Dir, Title) ->
+    Frame2 = {frame, [{src,?MODULES_FRAME},
+          {name,"modulesFrame"},{title,""}],
+        []},
+    Frame3 = {frame, [{src,?OVERVIEW_SUMMARY},
+          {name,"overviewFrame"},{title,""}],
+        []},
+    Frameset = {frameset, [{cols,"20%,80%"}],
+      [?NL, Frame2, ?NL, ?NL, Frame3, ?NL,
+        {noframes,
+         [?NL,
+          {h2, ["This page uses frames"]},
+          ?NL,
+          {p, ["Your browser does not accept frames.",
+         ?NL, br,
+         "You should go to the ",
+         {a, [{href, ?OVERVIEW_SUMMARY}],
+          ["non-frame version"]},
+         " instead.", ?NL]},
+          ?NL]},
+        ?NL]},
+    XML = xhtml_1(Title, [], Frameset),
     Text = xmerl:export_simple([XML], xmerl_html, []),
     edoc_lib:write_file(Text, Dir, ?INDEX_FILE).
 
 modules_frame(Dir, Ms, Title, CSS) ->
-    {'div', [],
+    [?NL,
+      {h2, [{class, "indextitle"}], ["Modules"]},
+      ?NL,
+      {table, [{width, "100%"}, {border, 0},
+         {summary, "list of modules"}],
        lists:concat(
-         [[{a, [{href, module_ref(M)},
+         [[?NL,
+     {tr, [{td, [],
+      [{a, [{href, module_ref(M)},
             {target, "overviewFrame"},
             {class, "module"}],
-        [atom_to_list(M)]}]
-     || M <- Ms])}.
+        [atom_to_list(M)]}]}]}]
+     || M <- Ms])},
+      ?NL].
 
 module_ref(M) ->
     atom_to_list(M) ++ ?DEFAULT_FILE_SUFFIX.
@@ -249,7 +337,10 @@ xhtml(Title, CSS, Content) ->
 
 xhtml_1(Title, CSS, Body) ->
     {html, [?NL,
-      {head, [?NL, {title, [Title]}, ?NL] ++ CSS}] ++ Body
+      {head, [?NL, {title, [Title]}, ?NL] ++ CSS},
+      ?NL,
+      Body,
+      ?NL]
     }.
 
 %% NEW-OPTIONS: overview
@@ -273,7 +364,6 @@ overview(Dir, Title, Env, Opts) ->
     end,
     Text = edoc_lib:run_layout(F, Opts),
     EncOpts = [{encoding,Encoding}],
-    erlang:display(Text),
     edoc_lib:write_file(Text, Dir, ?OVERVIEW_SUMMARY, EncOpts).
 
 copy_image(Dir) ->
@@ -407,14 +497,10 @@ app_index_file(Paths, Dir, Env, Options) ->
 %    Priv = proplists:get_bool(private, Options),
     CSS = stylesheet(Options),
     Apps1 = [{filename:dirname(A),filename:basename(A)} || A <- Paths],
-
-    AppPart = application_frame(Dir, Apps1, Title, CSS),
-    ModulesPart = modules_frame(Dir, [], Title, CSS),
-
-    _OverviewPart = overview(Dir, Title, Env, Options),
-
-    index_file(Dir, Title, ModulesPart, AppPart),
-
+    index_file(Dir, Title),
+    App = application_frame(Dir, Apps1, Title, CSS),
+    Modules = modules_frame(Dir, [], Title, CSS),
+    overview(Dir, Title, Env, Options),
 %    edoc_lib:write_info_file(Prod, [], Modules1, Dir),
     copy_stylesheet(Dir, Options).
 
