@@ -195,7 +195,7 @@ layout_module(#xmlElement{name = module, content = Es}=E, Opts) ->
                   true -> Functions
                end,
     Body = (navigation("top")
-            ++ [?NL, hr, ?NL, ?NL, {h1, Title}, ?NL]
+            ++ [?NL, ?NL, ?NL, {h1, Title}, ?NL]
       ++ doc_index(FullDesc, Functions, Types)
       ++ ShortDesc
       ++ [?NL]
@@ -218,12 +218,9 @@ layout_module(#xmlElement{name = module, content = Es}=E, Opts) ->
       ++ types(lists:sort(Types), Opts)
       ++ function_index(SortedFs, Opts#opts.index_columns)
       ++ functions(SortedFs, Opts)
-      ++ [hr, ?NL]
       ++ navigation("bottom")
       ++ footer()),
     Encoding = Opts#opts.encoding,
-    erlang:display("======================"),
-    erlang:display(Body),
     Body.
 
 module_params(Es) ->
@@ -251,18 +248,20 @@ stylesheet(Opts) ->
        ?NL]
     end.
 
-navigation(Where) ->
-    [?NL,
-     {'div', [{class, "navbar"}],
-      [{a, [{name, "#navbar_" ++ Where}], []},
-       {'div', [],
-  [{a, [{href, "http://www.erlang.org/"}],
-      [{img, [{src, "erlang.png"}, {align, "right"},
-        {border, 0}, {alt, "erlang logo"}],
-        []}]}
-    ]}
-      ]}
-    ].
+% navigation(Where) ->
+%     [?NL,
+%      {'div', [{class, "navbar"}],
+%       [{a, [{name, "#navbar_" ++ Where}], []},
+%        {'div', [],
+%   [{a, [{href, "http://www.erlang.org/"}],
+%       [{img, [{src, "erlang.png"}, {align, "right"},
+%         {border, 0}, {alt, "erlang logo"}],
+%         []}]}
+%     ]}
+%       ]}
+%     ].
+navigation(_Where) ->
+    [?NL].
 
 doc_index(FullDesc, Functions, Types) ->
     case doc_index_rows(FullDesc, Functions, Types) of
@@ -1042,7 +1041,6 @@ overview(E=#xmlElement{name = overview, content = Es}, Options) ->
       ++ sees(Es)
       ++ todos(Es)
       ++ FullDesc
-      ++ [?NL, hr]
       ++ navigation("bottom")
       ++ footer()),
     Encoding = Opts#opts.encoding,

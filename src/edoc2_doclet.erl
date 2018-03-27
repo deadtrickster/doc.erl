@@ -43,15 +43,33 @@
 %% @headerfile "edoc_doclet.hrl"
 -include_lib("edoc/include/edoc_doclet.hrl").
 
--define(EDOC_APP, edoc).
+-define(EDOC_APP, edoc2).
 -define(DEFAULT_FILE_SUFFIX, ".html").
 -define(INDEX_FILE, "index.html").
 -define(OVERVIEW_FILE, "overview.edoc").
 -define(OVERVIEW_SUMMARY, "overview-summary.html").
 -define(MODULES_FRAME, "modules-frame.html").
 -define(STYLESHEET, "stylesheet.css").
+-define(JAVASCRIPT, "script.js").
 -define(IMAGE, "erlang.png").
 -define(NL, "\n").
+
+-define(BASE_STYLE, "
+.sidebar{
+  padding: 0 1em;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 400px;
+  height: 100%;
+}
+.body{
+  position: absolute;
+  left: 400px;
+  right: 0;
+  height: 100%;
+}
+").
 
 -include_lib("xmerl/include/xmerl.hrl").
 
@@ -130,17 +148,19 @@ gen(Sources, App, Modules, Ctxt) ->
     Options = Ctxt#context.opts,
     Title = title(App, Options),
     CSS = stylesheet(Options),
+    JS = javascript(Options),
 
     {Modules1, Error} = modules_list(Sources, Dir, Modules, Env, Options),
 
-    ModulesList = modules_frame(Dir, Modules1, Title, CSS),
+    ModulesList = modules_frame(Dir, Modules1, Title),
 
-    {_, _} = sources(Sources, Dir, Modules, ModulesList, Env, Options),
+    {_, _} = sources(Sources, Dir, Modules, ModulesList, Env, Options, CSS, JS),
 
-    modules_frame(Dir, Modules1, Title, CSS),
+    % modules_frame(Dir, Modules1, Title, CSS),
     overview(Dir, Title, Env, Options),
-    index_file(Dir, Title),
-    edoc_lib:write_info_file(App, Modules1, Dir),
+    index_file(Dir, ModulesList, CSS, JS),
+
+    copy_javascript(Dir, Options),
     copy_stylesheet(Dir, Options),
     copy_image(Dir),
     %% handle postponed error during processing of source files
@@ -181,14 +201,14 @@ modules_list(Sources, Dir, Modules, Env, Options) ->
         {sets:new(), false}, Sources),
     {[M || M <- Modules, sets:is_element(M, Ms)], E}.
 
-sources(Sources, Dir, Modules, ModulesList, Env, Options) ->
+sources(Sources, Dir, Modules, ModulesList, Env, Options, CSS, JS) ->
     Suffix = proplists:get_value(file_suffix, Options,
          ?DEFAULT_FILE_SUFFIX),
     Private = proplists:get_bool(private, Options),
     Hidden = proplists:get_bool(hidden, Options),
     {Ms, E} = lists:foldl(fun (Src, {Set, Error}) ->
           source(Src, ModulesList, Dir, Suffix, Env, Set,
-           Private, Hidden, Error, Options)
+           Private, Hidden, Error, Options, CSS, JS)
         end,
         {sets:new(), false}, Sources),
     {[M || M <- Modules, sets:is_element(M, Ms)], E}.
@@ -217,7 +237,7 @@ sidebar_item({M, Name, Path}, Dir, Suffix, Env, Set, Private, Hidden,
     end.
 
 source({M, Name, Path}, Sidebar, Dir, Suffix, Env, Set, Private, Hidden,
-       Error, Options) ->
+       Error, Options, CSS, JS) ->
     File = filename:join(Path, Name),
     case catch {ok, edoc:get_doc(File, Env, Options)} of
       {ok, {Module, Doc}} ->
@@ -228,10 +248,7 @@ source({M, Name, Path}, Sidebar, Dir, Suffix, Env, Set, Private, Hidden,
             Body = edoc:layout(Doc, Options),
             Name1 = atom_to_list(M) ++ Suffix,
             Encoding = [{encoding,encoding(Doc)}],
-            Document = build_page(Body, Sidebar, encoding(Doc)),
-
-            erlang:display(Body),
-            erlang:display("="),
+            Document = build_page(Body, Sidebar, encoding(Doc), CSS, JS),
 
             edoc_lib:write_file(Document, Dir, Name1, Encoding),
             {sets:add_element(Module, Set), Error};
@@ -265,7 +282,7 @@ check_name(M, M0, File) ->
 %% Creating an index file, with some frames optional.
 %% TODO: get rid of frames, or change doctype to Frameset
 
-build_page(Body, Sidebar, Encoding) ->
+build_page(Body, Sidebar, Encoding, CSS, JS) ->
     % EncString = case Encoding of
     %                 latin1 -> "ISO-8859-1";
     %                 utf8 -> "UTF-8"
@@ -277,55 +294,79 @@ build_page(Body, Sidebar, Encoding) ->
           []},
          ?NL,
          {title, ["Title"]},
-         ?NL] ++ ["CSS"]},
+         ?NL] ++ CSS ++ JS},
        ?NL,
-       {body, [], [{'div',
-                [{class, "sidebar"}], Sidebar},
-               {'div', [{class, "body"}], Body}]
+       {body, [], [
+          {style, [], [?BASE_STYLE]},
+          {'div', [{class, "sidebar"}], Sidebar},
+          {'div', [{class, "body"}], Body}
+        ]
        },
        ?NL]
      },
      ?NL],
      xmerl:export_simple(Z, xmerl_html, []).
 
-index_file(Dir, Title) ->
-    Frame2 = {frame, [{src,?MODULES_FRAME},
-          {name,"modulesFrame"},{title,""}],
-        []},
-    Frame3 = {frame, [{src,?OVERVIEW_SUMMARY},
-          {name,"overviewFrame"},{title,""}],
-        []},
-    Frameset = {frameset, [{cols,"20%,80%"}],
-      [?NL, Frame2, ?NL, ?NL, Frame3, ?NL,
-        {noframes,
-         [?NL,
-          {h2, ["This page uses frames"]},
-          ?NL,
-          {p, ["Your browser does not accept frames.",
-         ?NL, br,
-         "You should go to the ",
-         {a, [{href, ?OVERVIEW_SUMMARY}],
-          ["non-frame version"]},
-         " instead.", ?NL]},
-          ?NL]},
-        ?NL]},
-    XML = xhtml_1(Title, [], Frameset),
-    Text = xmerl:export_simple([XML], xmerl_html, []),
-    edoc_lib:write_file(Text, Dir, ?INDEX_FILE).
+index_file(Dir, Body, CSS, JS) ->
+    % EncString = case Encoding of
+    %                 latin1 -> "ISO-8859-1";
+    %                 utf8 -> "UTF-8"
+    %             end,
+    Z = [{html, [?NL,
+       {head, [?NL,
+         {meta, [{'http-equiv',"Content-Type"},
+           {content, "text/html; charset=utf-8"}],
+          []},
+         ?NL,
+         {title, ["Title"]},
+         ?NL] ++ CSS ++ JS},
+       ?NL,
+       {body, [], [
+          {style, [], [?BASE_STYLE]},
+          {'div', [], Body}
+        ]
+       },
+       ?NL]
+     },
+     ?NL],
+     XML = xmerl:export_simple(Z, xmerl_html, []),
+     edoc_lib:write_file(XML, Dir, ?INDEX_FILE).
 
-modules_frame(Dir, Ms, Title, CSS) ->
+% index_file(Dir, Title) ->
+%     Frame2 = {frame, [{src,?MODULES_FRAME},
+%           {name,"modulesFrame"},{title,""}],
+%         []},
+%     Frame3 = {frame, [{src,?OVERVIEW_SUMMARY},
+%           {name,"overviewFrame"},{title,""}],
+%         []},
+%     Frameset = {frameset, [{cols,"20%,80%"}],
+%       [?NL, Frame2, ?NL, ?NL, Frame3, ?NL,
+%         {noframes,
+%          [?NL,
+%           {h2, ["This page uses frames"]},
+%           ?NL,
+%           {p, ["Your browser does not accept frames.",
+%          ?NL, br,
+%          "You should go to the ",
+%          {a, [{href, ?OVERVIEW_SUMMARY}],
+%           ["non-frame version"]},
+%          " instead.", ?NL]},
+%           ?NL]},
+%         ?NL]},
+%     XML = xhtml_1(Title, [], Frameset),
+%     Text = xmerl:export_simple([XML], xmerl_html, []),
+%     edoc_lib:write_file(Text, Dir, ?INDEX_FILE).
+
+modules_frame(Dir, Ms, Title) ->
     [?NL,
       {h2, [{class, "indextitle"}], ["Modules"]},
       ?NL,
-      {table, [{width, "100%"}, {border, 0},
-         {summary, "list of modules"}],
+      {ul, [],
        lists:concat(
-         [[?NL,
-     {tr, [{td, [],
-      [{a, [{href, module_ref(M)},
-            {target, "overviewFrame"},
-            {class, "module"}],
-        [atom_to_list(M)]}]}]}]
+         [[{li, [], [{a, [{href, module_ref(M)},
+                                  {target, "overviewFrame"},
+                                  {class, "module"}],
+                                [atom_to_list(M)]}]}  ]
      || M <- Ms])},
       ?NL].
 
@@ -400,6 +441,30 @@ copy_stylesheet(Dir, Options) ->
       ok
     end.
 
+%% NEW-OPTIONS: javascript_file
+%% DEFER-OPTIONS: run/2
+
+copy_javascript(Dir, Options) ->
+    case proplists:get_value(javascript, Options) of
+  undefined ->
+      From = case proplists:get_value(javascript_file, Options) of
+           File when is_list(File) ->
+         File;
+           _ ->
+         case code:priv_dir(?EDOC_APP) of
+             PrivDir when is_list(PrivDir) ->
+           filename:join(PrivDir, ?JAVASCRIPT);
+             _ ->
+           report("cannot find default "
+            "javascript file.", []),
+           exit(error)
+         end
+       end,
+      edoc_lib:copy_file(From, filename:join(Dir, ?JAVASCRIPT));
+  _ ->
+      ok
+    end.
+
 %% NEW-OPTIONS: stylesheet
 %% DEFER-OPTIONS: run/2
 
@@ -424,6 +489,28 @@ stylesheet(Options) ->
          {type, "text/css"},
          {href, Ref},
          {title, "EDoc"}], []},
+       ?NL]
+    end.
+
+javascript(Options) ->
+    case proplists:get_value(javascript, Options) of
+  "" ->
+      [];
+  S ->
+      Ref = case S of
+          undefined ->
+        ?JAVASCRIPT;
+          "" ->
+        "";    % no stylesheet
+          S when is_list(S) ->
+        S;
+          _ ->
+        report("bad value for option 'javascript'.",
+         []),
+        exit(error)
+      end,
+      [{script, [{type, "text/javascript"},
+         {src, Ref}], []},
        ?NL]
     end.
 
@@ -497,10 +584,16 @@ app_index_file(Paths, Dir, Env, Options) ->
 %    Priv = proplists:get_bool(private, Options),
     CSS = stylesheet(Options),
     Apps1 = [{filename:dirname(A),filename:basename(A)} || A <- Paths],
-    index_file(Dir, Title),
+
     App = application_frame(Dir, Apps1, Title, CSS),
-    Modules = modules_frame(Dir, [], Title, CSS),
+    Modules = modules_frame(Dir, [], Title),
+
     overview(Dir, Title, Env, Options),
+
+    Document = build_page(App, Modules, "", CSS, []),
+
+    edoc_lib:write_file(Document, Dir, ?INDEX_FILE),
+
 %    edoc_lib:write_info_file(Prod, [], Modules1, Dir),
     copy_stylesheet(Dir, Options).
 
