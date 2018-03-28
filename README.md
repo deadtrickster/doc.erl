@@ -1,9 +1,12 @@
 edoc2
 =====
 
-An OTP library
+edoc doclet
 
-Build
+rebar3 config:
 -----
 
-    $ rebar3 compile
+    {edoc_opts, [
+      {doclet, edoc2_doclet},
+      {layout, edoc2_layout}
+    ]}.
