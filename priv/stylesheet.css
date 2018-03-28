@@ -241,6 +241,7 @@ canvas {
 
 pre {
   overflow: auto;
+  background: #eee;
 }
 
 code,
@@ -251,14 +252,14 @@ samp {
 }
 
 code {
-  padding: 26px;
-  padding: 1.625rem;
-  display: block;
+  padding: 2.6px;
+  padding: 0.1625rem;
+  background: #eee;
 }
 @media screen and (min-width: 155em) {
   code {
-    padding: 26px;
-    padding: 1.625rem;
+    padding: 2.6px;
+    padding: 0.1625rem;
   }
 }
 
