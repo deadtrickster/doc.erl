@@ -241,7 +241,10 @@ canvas {
 
 pre {
   overflow: auto;
-  background: #eee;
+  margin-top: 26px;
+  margin-top: 1.625rem;
+  padding: 26px;
+  padding: 1.625rem;
 }
 
 code,
@@ -249,12 +252,12 @@ kbd,
 pre,
 samp {
   font-family: monospace, monospace;
+  background: #eee;
 }
 
 code {
   padding: 2.6px;
   padding: 0.1625rem;
-  background: #eee;
 }
 @media screen and (min-width: 155em) {
   code {

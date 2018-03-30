@@ -54,6 +54,8 @@
 -define(IMAGE, "erlang.png").
 -define(NL, "\n").
 
+-define(HIGHLIGHT_STYLE, "github.css").
+
 -define(BASE_STYLE, "
 .sidebar{
   padding: 0 1em;
@@ -289,12 +291,21 @@ build_page(Body, Sidebar, Encoding, CSS, JS) ->
     %             end,
     Z = [{html, [?NL,
        {head, [?NL,
-         {meta, [{'http-equiv',"Content-Type"},
-           {content, "text/html; charset=utf-8"}],
+          {meta, [{'http-equiv',"Content-Type"},
+            {content, "text/html; charset=utf-8"}],
           []},
-         ?NL,
-         {title, ["Title"]},
-         ?NL] ++ CSS ++ JS},
+          ?NL,
+          {title, ["Title"]},
+          ?NL,
+          {link, [
+            {rel, "stylesheet"},
+            {type, "text/css"},
+            {href, ?HIGHLIGHT_STYLE}], []},
+          ?NL,
+          {script, [
+            {type, "text/javascript"},
+            {src, "highlight.pack.js"}], []},
+          ?NL] ++ CSS ++ JS},
        ?NL,
        {body, [], [
           {style, [], [?BASE_STYLE]},
@@ -436,7 +447,10 @@ copy_stylesheet(Dir, Options) ->
            exit(error)
          end
        end,
-      edoc_lib:copy_file(From, filename:join(Dir, ?STYLESHEET));
+      edoc_lib:copy_file(From, filename:join(Dir, ?STYLESHEET)),
+      edoc_lib:copy_file(
+        filename:join([code:priv_dir(?EDOC_APP), "highlight/styles", ?HIGHLIGHT_STYLE]),
+        filename:join(Dir, ?HIGHLIGHT_STYLE));
   _ ->
       ok
     end.
@@ -446,23 +460,26 @@ copy_stylesheet(Dir, Options) ->
 
 copy_javascript(Dir, Options) ->
     case proplists:get_value(javascript, Options) of
-  undefined ->
-      From = case proplists:get_value(javascript_file, Options) of
-           File when is_list(File) ->
-         File;
-           _ ->
-         case code:priv_dir(?EDOC_APP) of
-             PrivDir when is_list(PrivDir) ->
-           filename:join(PrivDir, ?JAVASCRIPT);
-             _ ->
-           report("cannot find default "
-            "javascript file.", []),
-           exit(error)
-         end
-       end,
-      edoc_lib:copy_file(From, filename:join(Dir, ?JAVASCRIPT));
-  _ ->
-      ok
+      undefined ->
+          From = case proplists:get_value(javascript_file, Options) of
+               File when is_list(File) ->
+             File;
+               _ ->
+             case code:priv_dir(?EDOC_APP) of
+                 PrivDir when is_list(PrivDir) ->
+               filename:join(PrivDir, ?JAVASCRIPT);
+                 _ ->
+               report("cannot find default "
+                "javascript file.", []),
+               exit(error)
+             end
+           end,
+          edoc_lib:copy_file(From, filename:join(Dir, ?JAVASCRIPT)),
+          edoc_lib:copy_file(
+            filename:join(code:priv_dir(?EDOC_APP), "highlight.pack.js"),
+            filename:join(Dir, "highlight.pack.js"));
+      _ ->
+          ok
     end.
 
 %% NEW-OPTIONS: stylesheet
